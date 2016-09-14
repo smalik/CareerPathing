@@ -73,55 +73,105 @@ def split_soccode(df):
 
     return df
 
-def transform_ONET_tbl_1D(db, tbl_ONET, comp_measure = np.mean):
+def transform_ONET_tbl_1D(db, tbl_ONET, comp_measure = np.mean, stdErr= True):
     #sql_str = 'select * from ' + tbl_ONET
-    sql_str =   'select a.onetsoc_code, b.element_name, c.scale_name, a.element_id, a.scale_id, \
-                CONCAT(b.element_name, "_", a.scale_id) as col_name, a.data_value, a.standard_error, a.domain_source from ' + tbl_ONET + \
-                ' a join content_model_reference b using(element_id) join scales_reference c using(scale_id)'
+    if(stdErr):
+      sql_str =   'select a.onetsoc_code, b.element_name, c.scale_name, a.element_id, a.scale_id, \
+                  CONCAT(b.element_name, "_", a.scale_id) as col_name, a.data_value, a.standard_error, a.domain_source from ' + tbl_ONET + \
+                  ' a join content_model_reference b using(element_id) join scales_reference c using(scale_id)'
+    elif(not stdErr):
+      sql_str =   'select a.onetsoc_code, b.element_name, c.scale_name, a.element_id, a.scale_id, \
+                  CONCAT(b.element_name, "_", a.scale_id) as col_name, a.data_value, a.domain_source from ' + tbl_ONET + \
+                  ' a join content_model_reference b using(element_id) join scales_reference c using(scale_id)'
 
     print('Transforming ' + tbl_ONET + ':') 
 
     df = pd.read_sql(sql_str, con=db)
     print('loaded dataframe from MySQL. records:', len(df))
 
-    print(df.info())
-    print(df.columns)
-
     ##  NEED TO MERGE IN THE DESCRIPTIVE NAME HEADERS FROM OTHER TABLES TO DESCRIBE ELEMENT NAME
-    dsn = pd.pivot_table(df, values= 'data_value', index= ['onetsoc_code'], columns= ['element_id', 'scale_id'], aggfunc= comp_measure, fill_value= 0)
+    dsn = pd.pivot_table(df, values= 'data_value', index= ['onetsoc_code'], columns= ['element_name', 'scale_name'], aggfunc= comp_measure, fill_value= 0)
 
     return dsn
 
-def transform_ONET_tbl_2D(db, tbl_ONET, comp_measure = np.mean):
-
-    sql_str =   'select a.onetsoc_code, b.element_name, c.scale_name, a.element_id, a.scale_id, a.category, \
-                CONCAT(b.element_name, "_", a.scale_id, "_", a.category) as col_name, a.data_value, a.standard_error, a.domain_source from ' + tbl_ONET + \
-                ' a join content_model_reference b using(element_id) join scales_reference c using(scale_id)'
+def transform_ONET_tbl_2D(db, tbl_ONET, comp_measure = np.mean, stdErr= True):
+    if(stdErr):
+      sql_str =   'select a.onetsoc_code, b.element_name, c.scale_name, a.element_id, a.scale_id, a.category, \
+                  CONCAT(b.element_name, "_", a.scale_id, "_", a.category) as col_name, a.data_value, a.standard_error, a.domain_source from ' + tbl_ONET + \
+                  ' a join content_model_reference b using(element_id) join scales_reference c using(scale_id)'
+    elif(not stdErr):
+      sql_str =   'select a.onetsoc_code, b.element_name, c.scale_name, a.element_id, a.scale_id, a.category, \
+                  CONCAT(b.element_name, "_", a.scale_id, "_", a.category) as col_name, a.data_value,  a.domain_source from ' + tbl_ONET + \
+                  ' a join content_model_reference b using(element_id) join scales_reference c using(scale_id)'
 
     print('Transforming ' + tbl_ONET + ':') 
 
     df = pd.read_sql(sql_str, con=db)
     print('loaded dataframe from MySQL. records:', len(df))
 
-    print(df.info())
-    print(df.columns)
-
     dsn = pd.pivot_table(df, values= 'data_value', index= ['onetsoc_code'], columns= ['col_name'], aggfunc= comp_measure, fill_value= 0)
-    print(dsn.head())
     split_soccode(dsn)
 
-    return None
-    # return dsn
+    return dsn
 
+def transform_ONET_trTbl(db, tbl_ONET, comp_measure = np.mean):
+    sql_str =   'select a.onetsoc_code, a.task_id, b.task, a.scale_id, a.category, CONCAT(b.task_id, "_", a.scale_id, "_", a.category) as col_name, a.data_value, \
+                a.standard_error, a.domain_source from ' + tbl_ONET + ' a join task_statements b using(onetsoc_code, task_id) join scales_reference c using(scale_id)'
+
+    print('Transforming ' + tbl_ONET + ':') 
+
+    df = pd.read_sql(sql_str, con=db)
+    print('loaded dataframe from MySQL. records:', len(df))
+
+    dsn = pd.pivot_table(df, values= 'data_value', index= ['onetsoc_code'], columns= ['col_name'], aggfunc= comp_measure, fill_value= 0)
+    split_soccode(dsn)
+
+    return dsn
 
 
 
 db = pymysql.connect(host="dev.plytos.com", user="plytos", passwd="plytos1", db="onet")
 
-result = transform_ONET_tbl_1D(db=db, tbl_ONET='abilities')
+# Merge tables into one large table.
+# Merge on SOC Code as key
+abilities = transform_ONET_tbl_1D(db=db, tbl_ONET='abilities')
+knowledge = transform_ONET_tbl_1D(db=db, tbl_ONET='knowledge')
+interests = transform_ONET_tbl_1D(db=db, tbl_ONET='interests', stdErr= False)
+skills    = transform_ONET_tbl_1D(db=db, tbl_ONET='skills')
+work_values     = transform_ONET_tbl_1D(db=db, tbl_ONET='work_values', stdErr= False)
+work_styles     = transform_ONET_tbl_1D(db=db, tbl_ONET='work_styles')
+work_activities = transform_ONET_tbl_1D(db=db, tbl_ONET='work_activities')
 
-#transform_ONET_tbl_2D(db=db, tbl_ONET='education_training_experience')
-transform_ONET_tbl_2D(db=db, tbl_ONET='work_context')
+ete = transform_ONET_tbl_2D(db=db, tbl_ONET='education_training_experience')
+work_context = transform_ONET_tbl_2D(db=db, tbl_ONET='work_context')
+task_ratings = transform_ONET_trTbl(db=db, tbl_ONET='task_ratings')
+
+new = pd.merge(abilities, knowledge, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(abilities, knowledge, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(new, interests, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(new, skills, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(new, work_values, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(new, work_styles, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(new, work_activities, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new.columns = ['_'.join(col).strip() for col in new.columns.values]
+
+new = pd.merge(new, work_context, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(new, ete, left_index= True, right_index= True, how='outer')
+print(new.shape)
+new = pd.merge(new, task_ratings, left_index= True, right_index= True, how='outer')
+print(new.shape)
+print(new.head())
+print(new.columns)
+
+new.to_csv('new.csv')
 
 #dsn = pd.pivot_table(df_mysql, values= 'data_value', index= ['onetsoc_code'], columns= ['element_id', 'scale_id'], aggfunc= np.sum) 
 #dsn = pd.pivot_table(df_mysql, values= 'data_value', index= ['onetsoc_code'], columns= ['task_id'], aggfunc= np.mean, dropna= False, fill_value = 0)
